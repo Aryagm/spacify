@@ -1,0 +1,12 @@
+.build/
+build/
+logs/
+.DS_Store
+.swiftpm/
+DerivedData/
+*.xcuserstate
+*.xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+.env
+.env.*
