@@ -3,14 +3,16 @@ import Testing
 
 @Suite("Process tap renderer source")
 struct ProcessTapSpatialRendererSourceTests {
-    @Test("does not mutate native head tracking on a running renderer")
-    func doesNotMutateNativeHeadTrackingOnRunningRenderer() throws {
+    @Test("applies head tracking to the live mixer without rebuilding the route")
+    func appliesHeadTrackingToTheLiveMixer() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appending(path: "Sources/SpotifyNativeSpatial/ProcessTapSpatialRenderer.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
-        #expect(!source.contains("func setNativeHeadTrackingEnabled"))
-        #expect(!source.contains("spatialMixer?.setNativeHeadTrackingEnabled"))
+        // Rebuilding the route for a head-tracking change tears down and
+        // recreates the tap, which is audible; the property toggles live.
+        #expect(source.contains("func setHeadTrackingEnabled"))
+        #expect(source.contains("spatialMixer.setHeadTrackingEnabled"))
     }
 
     @Test("rate-matches the tap to the aggregate clock")

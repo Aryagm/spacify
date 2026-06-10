@@ -30,6 +30,18 @@ final class ProcessTapSpatialRenderer {
         self.queue = DispatchQueue(label: "Spacify.ProcessTap", qos: .userInteractive)
     }
 
+    /// Applies head tracking to the running mixer without rebuilding the
+    /// route. Throws if there is no live mixer or the property set fails;
+    /// the caller falls back to a route restart.
+    func setHeadTrackingEnabled(_ enabled: Bool) throws {
+        guard isRunning, let spatialMixer else {
+            throw "No running spatial route to apply head tracking to."
+        }
+
+        try spatialMixer.setHeadTrackingEnabled(enabled)
+        headTrackingEnabled = enabled
+    }
+
     func start() throws {
         guard !isRunning else {
             return

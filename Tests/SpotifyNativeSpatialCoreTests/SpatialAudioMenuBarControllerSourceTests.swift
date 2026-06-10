@@ -14,12 +14,13 @@ struct SpatialAudioMenuBarControllerSourceTests {
         #expect(!source.contains("setNativeHeadTrackingEnabled"))
     }
 
-    @Test("head tracking changes are applied on the next route start")
-    func headTrackingChangesAreAppliedOnNextRouteStart() throws {
+    @Test("head tracking changes apply live with a restart fallback")
+    func headTrackingChangesApplyLiveWithRestartFallback() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appending(path: "Sources/SpotifyNativeSpatial/SpatialAudioMenuBarController.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
+        #expect(source.contains("try renderer.setHeadTrackingEnabled(headTrackingEnabled)"))
         #expect(source.contains("activeHeadTrackingEnabled"))
         #expect(source.contains("headTrackingChangePending"))
         #expect(!source.contains("""

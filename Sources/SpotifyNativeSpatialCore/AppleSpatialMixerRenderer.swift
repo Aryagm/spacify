@@ -67,6 +67,13 @@ public final class AppleSpatialMixerRenderer {
         scratchOutput.unsafeMutablePointer.deallocate()
     }
 
+    /// Toggles Apple's native head tracking on the live mixer. The property
+    /// is global and does not require reinitializing the unit, so routing
+    /// keeps running while AirPods start or stop their motion channel.
+    public func setHeadTrackingEnabled(_ enabled: Bool) throws {
+        try configureNativeHeadTracking(enabled)
+    }
+
     public func render(
         input: UnsafePointer<AudioBufferList>,
         output: UnsafeMutablePointer<AudioBufferList>,

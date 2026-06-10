@@ -114,9 +114,18 @@ private extension SpatialAudioMenuBarController {
     func applyHeadTrackingPreferenceChange() {
         UserDefaults.standard.set(headTrackingEnabled, forKey: PreferenceKey.headTracking)
 
-        if renderer == nil {
+        guard let renderer else {
             activeHeadTrackingEnabled = headTrackingEnabled
-        } else {
+            return
+        }
+
+        // Prefer toggling head tracking on the live mixer -- rebuilding the
+        // whole route for one property is what made the switch sound rough.
+        // The restart path remains as a fallback if the live set fails.
+        do {
+            try renderer.setHeadTrackingEnabled(headTrackingEnabled)
+            activeHeadTrackingEnabled = headTrackingEnabled
+        } catch {
             statusMessage = "Restart to apply"
         }
     }
