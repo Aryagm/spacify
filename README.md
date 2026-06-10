@@ -4,6 +4,18 @@
 
 **Spatial audio for any Mac app.** Spacify is a menu bar utility that takes the sound of any running app — Spotify, Chrome, a game, anything CoreAudio can see — and re-renders it through Apple's own spatial audio engine, with optional AirPods head tracking. Apps that were never built for Spatial Audio suddenly sound like they were.
 
+## Install
+
+One command — downloads the latest release into `/Applications`, approves it on your Mac, and launches it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Aryagm/spacify/main/install.sh | sh
+```
+
+Spacify is open source and isn't notarized, so the script clears the Gatekeeper download quarantine and applies a local ad-hoc signature — that's the "approve" step. It's a dozen lines; read it first if you like: [`install.sh`](install.sh). The release binary is universal (Apple silicon + Intel) and needs macOS 14.2+.
+
+Then: click the earbuds icon in the menu bar → toggle an app → listen. macOS will ask for **System Audio Recording** permission the first time you spatialize an app — that's the process tap.
+
 ## What it does
 
 Click the waveform icon in the menu bar, flip the switch next to an app, and that app's stereo audio is lifted out of its normal playback path and re-rendered by `AUSpatialMixer` — the same spatializer Apple uses for its own Spatial Audio features:
@@ -20,18 +32,6 @@ What it deliberately does **not** do: EQ, gain, compression, limiting, reverb tw
 ## Why it exists
 
 There is no public API to force Apple Spatial Audio *inside* another signed app — Spotify on macOS, for example, simply doesn't offer it. Spacify takes the workable route instead: capture the app's audio at the CoreAudio process level, mute the original, and run the stream through Apple's spatializer in a helper process. Same engine, same head tracking — just rendered one step downstream.
-
-## Install
-
-One command — downloads the latest release into `/Applications`, approves it on your Mac, and launches it:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/Aryagm/spacify/main/install.sh | sh
-```
-
-Spacify is open source and isn't notarized, so the script clears the Gatekeeper download quarantine and applies a local ad-hoc signature — that's the "approve" step. It's a dozen lines; read it first if you like: [`install.sh`](install.sh). The release binary is universal (Apple silicon + Intel) and needs macOS 14.2+.
-
-Then: click the earbuds icon in the menu bar → toggle an app → listen. macOS will ask for **System Audio Recording** permission the first time you spatialize an app — that's the process tap.
 
 ## Build from source
 
