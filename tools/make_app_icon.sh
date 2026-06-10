@@ -1,6 +1,6 @@
 #!/bin/sh
-# Renders Resources/AppIcon.icns: a macOS rounded-rect tile with a waveform
-# inside a tilted orbit ring (sound placed in 3D space).
+# Renders Resources/AppIcon.icns: a macOS rounded-rect tile with an earbuds
+# glyph (converted from the project's SVG mark).
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,52 +37,64 @@ NSGradient(
     ending: NSColor(calibratedRed: 0.07, green: 0.04, blue: 0.28, alpha: 1)
 )!.draw(in: tilePath, angle: -70)
 
-// Soft glow behind the mark, clipped to the tile.
+// Soft glow behind the glyph, clipped to the tile.
 tilePath.setClip()
 NSGradient(
-    starting: NSColor(calibratedWhite: 1, alpha: 0.18),
+    starting: NSColor(calibratedWhite: 1, alpha: 0.16),
     ending: NSColor(calibratedWhite: 1, alpha: 0)
 )!.draw(
-    fromCenter: NSPoint(x: canvas / 2, y: canvas / 2 + 40), radius: 0,
-    toCenter: NSPoint(x: canvas / 2, y: canvas / 2 + 40), radius: 380,
+    fromCenter: NSPoint(x: canvas / 2, y: canvas / 2), radius: 0,
+    toCenter: NSPoint(x: canvas / 2, y: canvas / 2), radius: 380,
     options: []
 )
 
-let center = NSPoint(x: canvas / 2, y: canvas / 2)
+// Earbuds glyph, converted from a 24x24 SVG (stroke-width 2, round caps).
+let scale: CGFloat = 24
+let offset = (canvas - 24 * scale) / 2
 
-// Orbit ring: a unit-circle arc scaled to an ellipse, tilted. The upper half
-// passes behind the waveform, the lower half in front of it.
-func orbitArc(from startAngle: CGFloat, to endAngle: CGFloat) -> NSBezierPath {
-    let path = NSBezierPath()
-    path.appendArc(withCenter: .zero, radius: 1, startAngle: startAngle, endAngle: endAngle)
-    let transform = NSAffineTransform()
-    transform.translateX(by: center.x, yBy: center.y)
-    transform.rotate(byDegrees: -16)
-    transform.scaleX(by: 286, yBy: 112)
-    path.transform(using: transform as AffineTransform)
-    path.lineWidth = 30
-    path.lineCapStyle = .round
-    return path
+func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+    NSPoint(x: offset + x * scale, y: offset + (24 - y) * scale)
 }
 
-NSColor(calibratedWhite: 1, alpha: 0.38).set()
-orbitArc(from: 8, to: 172).stroke()
+func curve(_ path: NSBezierPath, _ x1: CGFloat, _ y1: CGFloat, _ x2: CGFloat, _ y2: CGFloat, _ x: CGFloat, _ y: CGFloat) {
+    path.curve(to: p(x, y), controlPoint1: p(x1, y1), controlPoint2: p(x2, y2))
+}
 
-// Waveform bars.
-let barWidth: CGFloat = 56
-let barHeights: [CGFloat] = [164, 276, 392, 276, 164]
+let leftBud = NSBezierPath()
+leftBud.move(to: p(2, 7.625))
+curve(leftBud, 2, 9.90317, 3.84683, 11.75, 6.125, 11.75)
+curve(leftBud, 6.43089, 11.75, 6.58383, 11.75, 6.66308, 11.7773)
+curve(leftBud, 6.82888, 11.8345, 6.91545, 11.9211, 6.97266, 12.0869)
+curve(leftBud, 7, 12.1662, 7, 12.2903, 7, 12.5386)
+leftBud.line(to: p(7, 18.875))
+curve(leftBud, 7, 19.7725, 7.72754, 20.5, 8.625, 20.5)
+curve(leftBud, 9.52246, 20.5, 10.25, 19.7725, 10.25, 18.875)
+leftBud.line(to: p(10.25, 7.625))
+curve(leftBud, 10.25, 5.34683, 8.40317, 3.5, 6.125, 3.5)
+curve(leftBud, 3.84683, 3.5, 2, 5.34683, 2, 7.625)
+leftBud.close()
+
+let rightBud = NSBezierPath()
+rightBud.move(to: p(22, 7.625))
+curve(rightBud, 22, 9.90317, 20.1532, 11.75, 17.875, 11.75)
+curve(rightBud, 17.5691, 11.75, 17.4162, 11.75, 17.3369, 11.7773)
+curve(rightBud, 17.1711, 11.8345, 17.0845, 11.9211, 17.0273, 12.0869)
+curve(rightBud, 17, 12.1662, 17, 12.2903, 17, 12.5386)
+rightBud.line(to: p(17, 18.875))
+curve(rightBud, 17, 19.7725, 16.2725, 20.5, 15.375, 20.5)
+curve(rightBud, 14.4775, 20.5, 13.75, 19.7725, 13.75, 18.875)
+rightBud.line(to: p(13.75, 7.625))
+curve(rightBud, 13.75, 5.34683, 15.5968, 3.5, 17.875, 3.5)
+curve(rightBud, 20.1532, 3.5, 22, 5.34683, 22, 7.625)
+rightBud.close()
+
 NSColor.white.set()
-for (index, height) in barHeights.enumerated() {
-    let x = center.x + CGFloat(index - 2) * 96 - barWidth / 2
-    NSBezierPath(
-        roundedRect: NSRect(x: x, y: center.y - height / 2, width: barWidth, height: height),
-        xRadius: barWidth / 2,
-        yRadius: barWidth / 2
-    ).fill()
+for path in [leftBud, rightBud] {
+    path.lineWidth = 2 * scale
+    path.lineCapStyle = .round
+    path.lineJoinStyle = .round
+    path.stroke()
 }
-
-NSColor(calibratedWhite: 1, alpha: 0.96).set()
-orbitArc(from: 188, to: 352).stroke()
 
 NSGraphicsContext.restoreGraphicsState()
 
