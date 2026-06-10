@@ -35,7 +35,7 @@ public enum StereoFloatBufferBridge {
 }
 
 extension StereoFloatBufferBridge {
-    static func frameCount(in buffers: UnsafeMutableAudioBufferListPointer) -> Int {
+    public static func frameCount(in buffers: UnsafeMutableAudioBufferListPointer) -> Int {
         var minFrames = Int.max
 
         for buffer in buffers {

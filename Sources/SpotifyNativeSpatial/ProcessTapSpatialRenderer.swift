@@ -12,6 +12,7 @@ final class ProcessTapSpatialRenderer {
     private var aggregateDeviceID = AudioObjectID.unknown
     private var deviceProcID: AudioDeviceIOProcID?
     private var spatialMixer: AppleSpatialMixerRenderer?
+    private var transitionEnvelope: RouteTransitionEnvelope?
     private var isRunning = false
 
     init(processes: [AppAudioProcess], headTrackingEnabled: Bool = false) {
@@ -112,12 +113,16 @@ final class ProcessTapSpatialRenderer {
         )
         spatialMixer = mixer
 
+        let envelope = RouteTransitionEnvelope(sampleRate: sampleRate)
+        transitionEnvelope = envelope
+
         try checkOSStatus(
             // Capture the mixer strongly: weak loads take a runtime lock and
             // are not safe on the audio thread. The IO proc is destroyed in
             // stop() before the mixer is released.
             AudioDeviceCreateIOProcIDWithBlock(&deviceProcID, aggregateDeviceID, queue) { _, inputData, _, outputData, outputTime in
                 mixer.render(input: inputData, output: outputData, timeStamp: outputTime)
+                envelope.apply(to: outputData, frames: StereoFloatBufferBridge.frameCount(in: UnsafeMutableAudioBufferListPointer(outputData)))
             },
             "AudioDeviceCreateIOProcIDWithBlock"
         )
@@ -133,6 +138,13 @@ final class ProcessTapSpatialRenderer {
     func stop() {
         guard isRunning || tapID.isValid || aggregateDeviceID.isValid else {
             return
+        }
+
+        // Let the route fade to silence before tearing it down, so stopping
+        // doesn't cut audio mid-waveform.
+        if isRunning, let transitionEnvelope {
+            transitionEnvelope.beginFadeOut()
+            Thread.sleep(forTimeInterval: transitionEnvelope.fadeOutDuration + 0.02)
         }
 
         if aggregateDeviceID.isValid {
@@ -153,6 +165,7 @@ final class ProcessTapSpatialRenderer {
         }
 
         spatialMixer = nil
+        transitionEnvelope = nil
         isRunning = false
     }
 

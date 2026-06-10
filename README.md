@@ -27,7 +27,7 @@ Click the earbuds icon in the menu bar, flip the switch next to an app, and that
 - **Remembers your setup.** App selections and the head-tracking preference persist across launches; routing resumes by itself if the apps are running.
 - **No double audio.** Tapped apps are muted at the system level while routed, so you only ever hear the spatialized feed.
 
-What it deliberately does **not** do: EQ, gain, compression, limiting, reverb tweaks, stereo widening, crossfeed, or any custom DSP. The audio you hear is Apple's spatial render of the original stream — nothing else. A fixed "clean music" profile keeps the mixer honest: stereo input stays an ambience bed, default reverb wetness is disabled, playback rate is locked at 1.0.
+What it deliberately does **not** do: EQ, gain, compression, limiting, reverb tweaks, stereo widening, crossfeed, or any custom DSP. The audio you hear is Apple's spatial render of the original stream — nothing else. A fixed "clean music" profile keeps the mixer honest: stereo input stays an ambience bed, default reverb wetness is disabled, playback rate is locked at 1.0. The single exception is a sub-second fade when a route starts or stops, so toggling doesn't click; steady-state audio is never level-processed.
 
 ## Why it exists
 
