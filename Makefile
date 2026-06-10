@@ -4,9 +4,11 @@ LEGACY_APP_NAME := SpotifyNativeSpatial
 BUILD_DIR := build
 APP_BUNDLE := $(BUILD_DIR)/$(APP_NAME).app
 EXECUTABLE := .build/release/$(TARGET_NAME)
+UNIVERSAL_EXECUTABLE := .build/apple/Products/Release/$(TARGET_NAME)
 BUNDLED_EXECUTABLE := $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME)
+DIST_ZIP := $(BUILD_DIR)/$(APP_NAME).zip
 
-.PHONY: build app run run-head run-spotify run-spotify-head list icon test clean
+.PHONY: build app dist run run-head run-spotify run-spotify-head list icon test clean
 
 build:
 	swift build -c release
@@ -21,6 +23,17 @@ app: build
 	cp Resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/AppIcon.icns"
 	cp "$(EXECUTABLE)" "$(BUNDLED_EXECUTABLE)"
 	codesign --force --deep --sign - "$(APP_BUNDLE)"
+
+dist:
+	swift build -c release --arch arm64 --arch x86_64
+	rm -rf "$(APP_BUNDLE)"
+	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources"
+	cp Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
+	cp Resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/AppIcon.icns"
+	cp "$(UNIVERSAL_EXECUTABLE)" "$(BUNDLED_EXECUTABLE)"
+	codesign --force --deep --sign - "$(APP_BUNDLE)"
+	ditto -c -k --keepParent "$(APP_BUNDLE)" "$(DIST_ZIP)"
+	@echo "Wrote $(DIST_ZIP) (universal)"
 
 run: app
 	@pkill -x "$(APP_NAME)" 2>/dev/null || true

@@ -21,16 +21,26 @@ What it deliberately does **not** do: EQ, gain, compression, limiting, reverb tw
 
 There is no public API to force Apple Spatial Audio *inside* another signed app — Spotify on macOS, for example, simply doesn't offer it. Spacify takes the workable route instead: capture the app's audio at the CoreAudio process level, mute the original, and run the stream through Apple's spatializer in a helper process. Same engine, same head tracking — just rendered one step downstream.
 
-## Quick start
+## Install
+
+One command — downloads the latest release into `/Applications`, approves it on your Mac, and launches it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Aryagm/spacify/main/install.sh | sh
+```
+
+Spacify is open source and isn't notarized, so the script clears the Gatekeeper download quarantine and applies a local ad-hoc signature — that's the "approve" step. It's a dozen lines; read it first if you like: [`install.sh`](install.sh). The release binary is universal (Apple silicon + Intel) and needs macOS 14.2+.
+
+Then: click the earbuds icon in the menu bar → toggle an app → listen. macOS will ask for **System Audio Recording** permission the first time you spatialize an app — that's the process tap.
+
+## Build from source
 
 ```sh
 make app    # build the .app bundle
 make run    # launch the menu bar app
 ```
 
-Requires macOS 14.2+ (Core Audio Process Taps) and the Xcode command line tools. macOS will ask for **System Audio Recording** permission on first use — that's the process tap.
-
-Then: click the waveform icon → toggle an app → listen. `make run-head` launches with head tracking pre-enabled regardless of the saved preference.
+Requires macOS 14.2+ (Core Audio Process Taps) and the Xcode command line tools. `make run-head` launches with head tracking pre-enabled regardless of the saved preference, and `make dist` produces the universal release zip.
 
 Diagnostics:
 
@@ -90,4 +100,4 @@ The test suite includes *purity guards* — source-inspection tests that fail if
 
 - The AirPods Spatial Audio menu may not list the original app as supported content — that app is still its own CoreAudio client, and what you hear is the helper-rendered monitor feed.
 - CoreAudio exposes process-level audio, not browser-tab identity. Spacify can spatialize a browser's audio, not one arbitrary tab.
-- `make app` ad-hoc signs the bundle, which is fine locally; distributing to other Macs requires Developer ID signing and notarization.
+- The app is not notarized. The install script approves it locally (quarantine removal + ad-hoc signature); installing by hand means right-clicking the app and choosing Open the first time.
