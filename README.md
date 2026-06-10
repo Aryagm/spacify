@@ -1,6 +1,6 @@
-<p align="center"><img src="Resources/Banner.png" alt="Spacify — spatial audio for any Mac app"></p>
-
 # Spacify
+
+<p align="center"><img src="Resources/Banner.png" alt="Spacify — spatial audio for any Mac app"></p>
 
 **Spatial audio for any Mac app.** Spacify is a menu bar utility that takes the sound of any running app — Spotify, Chrome, a game, anything CoreAudio can see — and re-renders it through Apple's own spatial audio engine, with optional AirPods head tracking. Apps that were never built for Spatial Audio suddenly sound like they were.
 
