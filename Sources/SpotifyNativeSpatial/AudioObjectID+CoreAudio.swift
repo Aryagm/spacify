@@ -22,13 +22,23 @@ extension AudioObjectID {
             "AudioObjectGetPropertyDataSize(process list)"
         )
 
-        var value = [AudioObjectID](repeating: .unknown, count: Int(dataSize) / MemoryLayout<AudioObjectID>.size)
-        try checkOSStatus(
-            AudioObjectGetPropertyData(system, &address, 0, nil, &dataSize, &value),
-            "AudioObjectGetPropertyData(process list)"
-        )
+        var values = [AudioObjectID](repeating: .unknown, count: Int(dataSize) / MemoryLayout<AudioObjectID>.size)
+        guard !values.isEmpty else {
+            return []
+        }
 
-        return value
+        try values.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else {
+                return
+            }
+
+            try checkOSStatus(
+                AudioObjectGetPropertyData(system, &address, 0, nil, &dataSize, baseAddress),
+                "AudioObjectGetPropertyData(process list)"
+            )
+        }
+
+        return values
     }
 
     static func translatePIDToProcessObjectID(pid: pid_t) throws -> AudioObjectID {

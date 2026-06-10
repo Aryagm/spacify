@@ -1,3 +1,4 @@
+import Accelerate
 import AudioToolbox
 import Foundation
 
@@ -45,6 +46,31 @@ extension StereoFloatBufferBridge {
 
         return minFrames == Int.max ? 0 : minFrames
     }
+
+    static func clear(
+        output: UnsafeMutableAudioBufferListPointer,
+        fromFrame: Int,
+        toFrame: Int
+    ) {
+        guard toFrame > fromFrame else {
+            return
+        }
+
+        for buffer in output {
+            guard let data = buffer.mData else {
+                continue
+            }
+
+            let channels = max(1, Int(buffer.mNumberChannels))
+            let startSample = fromFrame * channels
+            let sampleCount = (toFrame - fromFrame) * channels
+            memset(
+                data.assumingMemoryBound(to: Float.self).advanced(by: startSample),
+                0,
+                sampleCount * MemoryLayout<Float>.size
+            )
+        }
+    }
 }
 
 private extension StereoFloatBufferBridge {
@@ -88,9 +114,9 @@ private extension StereoFloatBufferBridge {
             return false
         }
 
-        for frame in 0..<frames {
-            leftOutput[frame] = inputData[frame * 2]
-            rightOutput[frame] = inputData[frame * 2 + 1]
+        var split = DSPSplitComplex(realp: leftOutput, imagp: rightOutput)
+        inputData.withMemoryRebound(to: DSPComplex.self, capacity: frames) { interleaved in
+            vDSP_ctoz(interleaved, 2, &split, 1, vDSP_Length(frames))
         }
         return true
     }
@@ -111,9 +137,9 @@ private extension StereoFloatBufferBridge {
             return false
         }
 
-        for frame in 0..<frames {
-            outputData[frame * 2] = leftInput[frame]
-            outputData[frame * 2 + 1] = rightInput[frame]
+        var split = DSPSplitComplex(realp: leftInput, imagp: rightInput)
+        outputData.withMemoryRebound(to: DSPComplex.self, capacity: frames) { interleaved in
+            vDSP_ztoc(&split, 1, interleaved, 2, vDSP_Length(frames))
         }
         return true
     }
@@ -137,8 +163,8 @@ private extension StereoFloatBufferBridge {
         }
 
         let byteCount = frames * MemoryLayout<Float>.size
-        memmove(leftOutput, leftInput, byteCount)
-        memmove(rightOutput, rightInput, byteCount)
+        memcpy(leftOutput, leftInput, byteCount)
+        memcpy(rightOutput, rightInput, byteCount)
         return true
     }
 
@@ -156,7 +182,7 @@ private extension StereoFloatBufferBridge {
             return false
         }
 
-        memmove(outputData, inputData, frames * 2 * MemoryLayout<Float>.size)
+        memcpy(outputData, inputData, frames * 2 * MemoryLayout<Float>.size)
         return true
     }
 
@@ -215,31 +241,6 @@ private extension StereoFloatBufferBridge {
             }
 
             channelBase += channels
-        }
-    }
-
-    static func clear(
-        output: UnsafeMutableAudioBufferListPointer,
-        fromFrame: Int,
-        toFrame: Int
-    ) {
-        guard toFrame > fromFrame else {
-            return
-        }
-
-        for buffer in output {
-            guard let data = buffer.mData else {
-                continue
-            }
-
-            let channels = max(1, Int(buffer.mNumberChannels))
-            let startSample = fromFrame * channels
-            let sampleCount = (toFrame - fromFrame) * channels
-            memset(
-                data.assumingMemoryBound(to: Float.self).advanced(by: startSample),
-                0,
-                sampleCount * MemoryLayout<Float>.size
-            )
         }
     }
 }

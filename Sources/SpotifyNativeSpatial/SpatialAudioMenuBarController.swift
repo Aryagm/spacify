@@ -1,46 +1,50 @@
 import AppKit
 import Combine
 import Foundation
-import SwiftUI
 
 @available(macOS 14.2, *)
 @MainActor
-final class SpatialAudioMenuBarController: NSObject, NSApplicationDelegate, ObservableObject {
+final class SpatialAudioMenuBarController: ObservableObject {
     @Published private(set) var availableApps: [AudioAppTarget] = []
     @Published private(set) var selectedAppKeys = Set<String>()
     @Published private(set) var statusMessage = "Idle"
-    @Published var headTrackingEnabled: Bool {
+    @Published private(set) var activeHeadTrackingEnabled = false
+    @Published var headTrackingEnabled = false {
         didSet {
             guard oldValue != headTrackingEnabled else {
                 return
             }
-            updateHeadTracking()
+            applyHeadTrackingPreferenceChange()
         }
     }
 
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let popover = NSPopover()
-    private let headMotionTracker = HeadMotionTracker()
     private var renderer: ProcessTapSpatialRenderer?
+    private var restartWorkItem: DispatchWorkItem?
+    private let outputDeviceObserver = DefaultOutputDeviceObserver()
 
-    init(headTrackingEnabled: Bool) {
-        self.headTrackingEnabled = headTrackingEnabled
-        super.init()
+    private enum PreferenceKey {
+        static let headTracking = "headTrackingEnabled"
+        static let selectedApps = "selectedAppKeys"
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        configureStatusItem()
-        configurePopover()
-        refreshApps(restartSelected: false)
+    init(headTrackingEnabled: Bool? = nil) {
+        let defaults = UserDefaults.standard
+        let resolvedHeadTracking = headTrackingEnabled ?? defaults.bool(forKey: PreferenceKey.headTracking)
+        self.headTrackingEnabled = resolvedHeadTracking
+        self.activeHeadTrackingEnabled = resolvedHeadTracking
+        self.selectedAppKeys = Set(defaults.stringArray(forKey: PreferenceKey.selectedApps) ?? [])
 
-        if headTrackingEnabled {
-            updateHeadTracking()
+        outputDeviceObserver.start { [weak self] in
+            self?.handleDefaultOutputDeviceChange()
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        headMotionTracker.stop()
-        renderer?.stop()
+    var statusSymbolName: String {
+        selectedAppKeys.isEmpty ? "waveform.circle" : "waveform.circle.fill"
+    }
+
+    var headTrackingChangePending: Bool {
+        renderer != nil && headTrackingEnabled != activeHeadTrackingEnabled
     }
 
     func refreshApps(restartSelected: Bool = true) {
@@ -50,13 +54,10 @@ final class SpatialAudioMenuBarController: NSObject, NSApplicationDelegate, Obse
             selectedAppKeys.formIntersection(availableKeys)
 
             if restartSelected {
-                restartRenderer()
-            } else {
-                updateStatusButton()
+                scheduleRendererRestart()
             }
         } catch {
             statusMessage = "Refresh failed"
-            updateStatusButton()
         }
     }
 
@@ -70,12 +71,35 @@ final class SpatialAudioMenuBarController: NSObject, NSApplicationDelegate, Obse
         } else {
             selectedAppKeys.remove(app.key)
         }
-        restartRenderer()
+        persistSelection()
+        scheduleRendererRestart()
     }
 
     func stopAll() {
+        restartWorkItem?.cancel()
         selectedAppKeys.removeAll()
+        persistSelection()
         restartRenderer()
+    }
+
+    func restoreRoutingAtLaunch() {
+        guard !selectedAppKeys.isEmpty else {
+            return
+        }
+        refreshApps()
+    }
+
+    func restartRoutingToApplyHeadTracking() {
+        restartWorkItem?.cancel()
+        restartRenderer(applyHeadTrackingPreference: true)
+    }
+
+    func shutdown() {
+        outputDeviceObserver.stop()
+        restartWorkItem?.cancel()
+        restartWorkItem = nil
+        renderer?.stop()
+        renderer = nil
     }
 
     func quit() {
@@ -85,47 +109,57 @@ final class SpatialAudioMenuBarController: NSObject, NSApplicationDelegate, Obse
 
 @available(macOS 14.2, *)
 private extension SpatialAudioMenuBarController {
-    func configureStatusItem() {
-        guard let button = statusItem.button else {
+    func applyHeadTrackingPreferenceChange() {
+        UserDefaults.standard.set(headTrackingEnabled, forKey: PreferenceKey.headTracking)
+
+        if renderer == nil {
+            activeHeadTrackingEnabled = headTrackingEnabled
+        } else {
+            statusMessage = "Restart to apply"
+        }
+    }
+
+    func persistSelection() {
+        UserDefaults.standard.set(selectedAppKeys.sorted(), forKey: PreferenceKey.selectedApps)
+    }
+
+    func handleDefaultOutputDeviceChange() {
+        guard renderer != nil else {
             return
         }
 
-        let image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "Spatial Audio")
-        image?.isTemplate = true
-        button.image = image
-        button.toolTip = "Spatial Audio Router"
-        button.target = self
-        button.action = #selector(togglePopover(_:))
-        updateStatusButton()
+        // The route is bound to the device captured at start; rebuild it so
+        // audio follows the new default output. Refreshing also re-resolves
+        // process objects, and the rebuild itself is debounced.
+        refreshApps()
     }
 
-    func configurePopover() {
-        popover.behavior = .transient
-        popover.animates = true
-        popover.contentSize = NSSize(width: 360, height: 520)
-        popover.contentViewController = NSHostingController(
-            rootView: SpatialAudioPopoverView(controller: self)
-        )
-    }
-
-    func restartRenderer() {
-        renderer?.stop()
-        renderer = nil
-
+    func restartRenderer(applyHeadTrackingPreference: Bool = false) {
         let selectedApps = availableApps.filter { selectedAppKeys.contains($0.key) }
         let processes = selectedApps.flatMap(\.processes)
+        let previousRenderer = renderer
+        let wasRunning = previousRenderer != nil
+        let nextHeadTrackingEnabled = applyHeadTrackingPreference || !wasRunning
+            ? headTrackingEnabled
+            : activeHeadTrackingEnabled
 
         guard !processes.isEmpty else {
+            previousRenderer?.stop()
+            renderer = nil
+            activeHeadTrackingEnabled = headTrackingEnabled
             statusMessage = "Idle"
-            updateStatusButton()
             return
         }
 
         do {
-            let nextRenderer = ProcessTapSpatialRenderer(processes: processes)
+            let nextRenderer = ProcessTapSpatialRenderer(
+                processes: processes,
+                headTrackingEnabled: nextHeadTrackingEnabled
+            )
             try nextRenderer.start()
-            nextRenderer.setHeadOrientation(headMotionTracker.currentOrientation)
             renderer = nextRenderer
+            activeHeadTrackingEnabled = nextHeadTrackingEnabled
+            previousRenderer?.stop()
 
             if selectedApps.count == 1, let app = selectedApps.first {
                 statusMessage = "Spatializing \(app.displayName)"
@@ -133,55 +167,23 @@ private extension SpatialAudioMenuBarController {
                 statusMessage = "Spatializing \(selectedApps.count) apps"
             }
         } catch {
-            statusMessage = "Start failed"
-            selectedAppKeys.removeAll()
-        }
-
-        updateStatusButton()
-    }
-
-    func updateHeadTracking() {
-        if headTrackingEnabled {
-            headMotionTracker.onOrientationChanged = { [weak self] orientation in
-                self?.renderer?.setHeadOrientation(orientation)
+            statusMessage = previousRenderer == nil ? "Start failed" : "Restart failed"
+            if previousRenderer == nil {
+                selectedAppKeys.removeAll()
+                activeHeadTrackingEnabled = headTrackingEnabled
             }
+        }
+    }
 
-            let result = headMotionTracker.start()
-            if result == .started {
-                renderer?.setHeadOrientation(.zero)
-            } else {
-                headTrackingEnabled = false
-                statusMessage = result.statusMessage
+    func scheduleRendererRestart() {
+        restartWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                self?.restartRenderer()
             }
-        } else {
-            headMotionTracker.stop()
-            headMotionTracker.onOrientationChanged = nil
-            renderer?.setHeadOrientation(.zero)
         }
-
-        updateStatusButton()
-    }
-
-    func updateStatusButton() {
-        let active = !selectedAppKeys.isEmpty
-        let symbolName = active ? "waveform.circle.fill" : "waveform.circle"
-        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Spatial Audio")
-        image?.isTemplate = true
-        statusItem.button?.image = image
-        statusItem.button?.toolTip = statusMessage
-    }
-
-    @objc func togglePopover(_ sender: Any?) {
-        guard let button = statusItem.button else {
-            return
-        }
-
-        if popover.isShown {
-            popover.performClose(sender)
-        } else {
-            refreshApps(restartSelected: false)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
-        }
+        restartWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120), execute: workItem)
     }
 }

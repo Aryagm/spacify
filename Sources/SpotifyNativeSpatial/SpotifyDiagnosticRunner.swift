@@ -23,14 +23,12 @@ enum SpotifyDiagnosticRunner {
 
             let activeProcesses = processes.filter(\.audioActive)
             let targetProcesses = activeProcesses.isEmpty ? processes : activeProcesses
-            let renderer = ProcessTapSpatialRenderer(processes: targetProcesses)
-
-            if headTrackingEnabled {
-                print("Head tracking is only enabled in the menu bar app. The direct Spotify diagnostic runs fixed spatial audio to avoid CoreMotion permission aborts.")
-            }
+            let renderer = ProcessTapSpatialRenderer(
+                processes: targetProcesses,
+                headTrackingEnabled: headTrackingEnabled
+            )
 
             try renderer.start()
-            renderer.setHeadOrientation(.zero)
             print("Tap is running. Press Ctrl-C to stop.")
 
             installSignalHandlers(renderer: renderer)

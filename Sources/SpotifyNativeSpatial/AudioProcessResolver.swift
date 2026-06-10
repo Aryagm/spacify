@@ -176,12 +176,39 @@ private func appBundleInfo(path: String?, processBundleID: String?) -> (path: St
     }
 
     let appPath = components[0...appIndex].joined(separator: "/")
-    let url = URL(fileURLWithPath: appPath)
-    let bundle = Bundle(url: url)
-    let bundleID = bundle?.bundleIdentifier ?? processBundleID
-    let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-    let bundleName = bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
-    let name = displayName ?? bundleName ?? url.deletingPathExtension().lastPathComponent
+    let info = AppBundleInfoCache.shared.info(forAppPath: appPath)
 
-    return (appPath, bundleID, name)
+    return (appPath, info.bundleID ?? processBundleID, info.name)
+}
+
+private final class AppBundleInfoCache: @unchecked Sendable {
+    static let shared = AppBundleInfoCache()
+
+    private let lock = NSLock()
+    private var storage: [String: (bundleID: String?, name: String)] = [:]
+
+    func info(forAppPath appPath: String) -> (bundleID: String?, name: String) {
+        lock.lock()
+        let cached = storage[appPath]
+        lock.unlock()
+
+        if let cached {
+            return cached
+        }
+
+        let url = URL(fileURLWithPath: appPath)
+        let bundle = Bundle(url: url)
+        let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        let bundleName = bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+        let info = (
+            bundleID: bundle?.bundleIdentifier,
+            name: displayName ?? bundleName ?? url.deletingPathExtension().lastPathComponent
+        )
+
+        lock.lock()
+        storage[appPath] = info
+        lock.unlock()
+
+        return info
+    }
 }

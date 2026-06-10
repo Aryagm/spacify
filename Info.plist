@@ -5,17 +5,21 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>SpotifyNativeSpatial</string>
+	<string>Spacify</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.local.SpotifyNativeSpatial</string>
+	<string>ai.e3group.Spacify</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleDisplayName</key>
+	<string>Spacify</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Spatial Audio Router</string>
+	<string>Spacify</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -23,8 +27,6 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Spatial Audio Router captures selected app audio so it can mute original streams and render a spatialized monitor feed.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>Spatial Audio Router can use AirPods head motion to adjust the spatialized monitor feed.</string>
+	<string>Spacify captures selected app audio so it can mute original streams and render a spatialized monitor feed.</string>
 </dict>
 </plist>

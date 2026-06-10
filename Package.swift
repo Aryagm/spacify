@@ -6,6 +6,9 @@ let package = Package(
     platforms: [
         .macOS(.v14)
     ],
+    dependencies: [
+        .package(url: "https://github.com/orchetect/MacControlCenterUI", from: "2.7.0")
+    ],
     targets: [
         .target(
             name: "SpotifyNativeSpatialCore",
@@ -16,13 +19,15 @@ let package = Package(
         ),
         .executableTarget(
             name: "SpotifyNativeSpatial",
-            dependencies: ["SpotifyNativeSpatialCore"],
+            dependencies: [
+                .target(name: "SpotifyNativeSpatialCore"),
+                .product(name: "MacControlCenterUI", package: "MacControlCenterUI")
+            ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("AudioToolbox"),
                 .linkedFramework("AudioUnit"),
                 .linkedFramework("AVFoundation"),
-                .linkedFramework("CoreMotion"),
                 .linkedFramework("SwiftUI"),
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

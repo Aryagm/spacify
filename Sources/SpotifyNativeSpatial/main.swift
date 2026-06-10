@@ -1,21 +1,22 @@
 import AppKit
 import Foundation
+import MacControlCenterUI
+import SwiftUI
 
 struct Options {
     var listOnly = false
-    var headTracking = false
     var renderSpotify = false
+    var headTracking: Bool?
 }
 
 let options = parseOptions()
-var retainedMenuBarController: AnyObject?
 
 if #available(macOS 14.2, *) {
     MainActor.assumeIsolated {
         run(options: options)
     }
 } else {
-    fputs("SpotifyNativeSpatial requires macOS 14.2 or newer for Core Audio Process Taps.\n", stderr)
+    fputs("Spacify requires macOS 14.2 or newer for Core Audio Process Taps.\n", stderr)
     exit(1)
 }
 
@@ -27,23 +28,61 @@ func run(options: Options) {
         exit(0)
     }
 
-    if !options.renderSpotify {
-        runMenuBarApp(options: options)
+    if options.renderSpotify {
+        SpotifyDiagnosticRunner.run(headTrackingEnabled: options.headTracking ?? false)
         return
     }
 
-    SpotifyDiagnosticRunner.run(headTrackingEnabled: options.headTracking)
+    SpacifyLaunch.options = options
+    SpacifyMenuBarApp.main()
 }
 
 @available(macOS 14.2, *)
 @MainActor
-func runMenuBarApp(options: Options) {
-    let app = NSApplication.shared
-    let delegate = SpatialAudioMenuBarController(headTrackingEnabled: options.headTracking)
-    retainedMenuBarController = delegate
-    app.delegate = delegate
-    app.setActivationPolicy(.accessory)
-    app.run()
+private enum SpacifyLaunch {
+    static var options = Options()
+}
+
+@available(macOS 14.2, *)
+private struct SpacifyMenuBarApp: App {
+    @NSApplicationDelegateAdaptor(SpacifyAppDelegate.self) private var appDelegate
+    @StateObject private var controller: SpatialAudioMenuBarController
+    @State private var isMenuPresented = false
+
+    @MainActor
+    init() {
+        let controller = SpatialAudioMenuBarController(
+            headTrackingEnabled: SpacifyLaunch.options.headTracking
+        )
+        _controller = StateObject(wrappedValue: controller)
+        SpacifyAppDelegate.controller = controller
+    }
+
+    var body: some Scene {
+        MenuBarExtra("Spacify", systemImage: controller.statusSymbolName) {
+            SpatialAudioMenuContent(controller: controller, isMenuPresented: $isMenuPresented)
+                .onAppear {
+                    controller.refreshApps(restartSelected: false)
+                }
+        }
+        .menuBarExtraAccess(isPresented: $isMenuPresented)
+        .menuBarExtraStyle(.window)
+    }
+}
+
+@available(macOS 14.2, *)
+@MainActor
+private final class SpacifyAppDelegate: NSObject, NSApplicationDelegate {
+    static weak var controller: SpatialAudioMenuBarController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        Self.controller?.restoreRoutingAtLaunch()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Self.controller?.shutdown()
+    }
 }
 
 func parseOptions() -> Options {
@@ -54,19 +93,19 @@ func parseOptions() -> Options {
         switch argument {
         case "--list":
             options.listOnly = true
-        case "--no-head-tracking":
-            options.headTracking = false
-        case "--head-tracking":
-            options.headTracking = true
         case "--render-spotify", "--spotify":
             options.renderSpotify = true
+        case "--head-tracking":
+            options.headTracking = true
+        case "--no-head-tracking":
+            options.headTracking = false
         case "--help", "-h":
             print("""
             Usage:
-              SpotifyNativeSpatial [--list] [--head-tracking] [--render-spotify]
+              Spacify [--list] [--render-spotify] [--head-tracking]
 
             With no arguments, launches the menu bar app.
-            --head-tracking uses CoreMotion headphone motion to drive the spatial mixer's head pose.
+            --head-tracking asks Apple's AUSpatialMixer to use native AirPods head tracking.
             --render-spotify runs the previous terminal Spotify-only renderer for diagnostics.
             Run from the app bundle produced by `make app` for macOS audio-capture permission prompts.
             """)

@@ -5,24 +5,19 @@ import SpotifyNativeSpatialCore
 @available(macOS 14.2, *)
 final class ProcessTapSpatialRenderer {
     private let processes: [AppAudioProcess]
-    private let queue = DispatchQueue(label: "SpotifyNativeSpatial.ProcessTap", qos: .userInteractive)
+    private let queue: DispatchQueue
 
+    private var headTrackingEnabled: Bool
     private var tapID = AudioObjectID.unknown
     private var aggregateDeviceID = AudioObjectID.unknown
     private var deviceProcID: AudioDeviceIOProcID?
     private var spatialMixer: AppleSpatialMixerRenderer?
     private var isRunning = false
 
-    init(processes: [AppAudioProcess]) {
+    init(processes: [AppAudioProcess], headTrackingEnabled: Bool = false) {
         self.processes = processes
-    }
-
-    func setYaw(_ yaw: Float) {
-        spatialMixer?.setHeadYawRadians(yaw)
-    }
-
-    func setHeadOrientation(_ orientation: HeadOrientation) {
-        spatialMixer?.setHeadOrientation(orientation)
+        self.headTrackingEnabled = headTrackingEnabled
+        self.queue = DispatchQueue(label: "Spacify.ProcessTap", qos: .userInteractive)
     }
 
     func start() throws {
@@ -58,6 +53,9 @@ final class ProcessTapSpatialRenderer {
         tapID = createdTapID
 
         let streamDescription = try tapID.readAudioTapStreamBasicDescription()
+        guard streamDescription.isStereoFloatPCM else {
+            throw "Unsupported tap stream format for Apple Spatial Mixer bridge: \(streamDescription.spatialMixerFormatDescription)"
+        }
 
         let outputDeviceID = try AudioObjectID.readDefaultSystemOutputDevice()
         let outputUID = try outputDeviceID.readDeviceUID()
@@ -67,15 +65,17 @@ final class ProcessTapSpatialRenderer {
             ? streamDescription.mSampleRate
             : ((try? outputDeviceID.readNominalSampleRate()) ?? 48_000)
 
-        spatialMixer = try AppleSpatialMixerRenderer(
+        let mixer = try AppleSpatialMixerRenderer(
             configuration: AppleSpatialMixerConfiguration(
                 sampleRate: sampleRate,
-                outputDeviceKind: outputKind
+                outputDeviceKind: outputKind,
+                headTrackingEnabled: headTrackingEnabled
             )
         )
+        spatialMixer = mixer
 
         let aggregateDescription: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "SpotifyNativeSpatial",
+            kAudioAggregateDeviceNameKey: "Spacify",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceClockDeviceKey: outputUID,
@@ -89,7 +89,7 @@ final class ProcessTapSpatialRenderer {
             ],
             kAudioAggregateDeviceTapListKey: [
                 [
-                    kAudioSubTapDriftCompensationKey: true,
+                    kAudioSubTapDriftCompensationKey: false,
                     kAudioSubTapUIDKey: tapDescription.uuid.uuidString
                 ]
             ]
@@ -105,18 +105,11 @@ final class ProcessTapSpatialRenderer {
         try waitUntilAggregateDeviceIsReady(aggregateDeviceID)
 
         try checkOSStatus(
-            AudioDeviceCreateIOProcIDWithBlock(&deviceProcID, aggregateDeviceID, queue) { [weak self] _, inputData, _, outputData, outputTime in
-                guard let self else {
-                    StereoFloatBufferBridge.zero(output: outputData)
-                    return
-                }
-
-                guard let spatialMixer = self.spatialMixer else {
-                    StereoFloatBufferBridge.zero(output: outputData)
-                    return
-                }
-
-                spatialMixer.render(input: inputData, output: outputData, timeStamp: outputTime)
+            // Capture the mixer strongly: weak loads take a runtime lock and
+            // are not safe on the audio thread. The IO proc is destroyed in
+            // stop() before the mixer is released.
+            AudioDeviceCreateIOProcIDWithBlock(&deviceProcID, aggregateDeviceID, queue) { _, inputData, _, outputData, outputTime in
+                mixer.render(input: inputData, output: outputData, timeStamp: outputTime)
             },
             "AudioDeviceCreateIOProcIDWithBlock"
         )

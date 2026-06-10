@@ -6,15 +6,18 @@ public struct AppleSpatialMixerConfiguration {
     public var sampleRate: Float64
     public var outputDeviceKind: SpatialOutputDeviceKind
     public var maximumFrames: Int
+    public var headTrackingEnabled: Bool
 
     public init(
         sampleRate: Float64,
         outputDeviceKind: SpatialOutputDeviceKind,
-        maximumFrames: Int = 16_384
+        maximumFrames: Int = 16_384,
+        headTrackingEnabled: Bool = false
     ) {
         self.sampleRate = sampleRate
         self.outputDeviceKind = outputDeviceKind
         self.maximumFrames = maximumFrames
+        self.headTrackingEnabled = headTrackingEnabled
     }
 }
 
@@ -23,7 +26,6 @@ public final class AppleSpatialMixerRenderer {
     private let scratchLeft: UnsafeMutablePointer<Float>
     private let scratchRight: UnsafeMutablePointer<Float>
     private let scratchOutput: UnsafeMutableAudioBufferListPointer
-    private var postProcessor: SpatialAudioPostProcessor
     private var audioUnit: AudioUnit?
     private var currentInput: UnsafePointer<AudioBufferList>?
 
@@ -32,7 +34,6 @@ public final class AppleSpatialMixerRenderer {
         self.scratchLeft = UnsafeMutablePointer<Float>.allocate(capacity: configuration.maximumFrames)
         self.scratchRight = UnsafeMutablePointer<Float>.allocate(capacity: configuration.maximumFrames)
         self.scratchOutput = AudioBufferList.allocate(maximumBuffers: 2)
-        self.postProcessor = SpatialAudioPostProcessor(sampleRate: configuration.sampleRate)
 
         scratchOutput[0] = AudioBuffer(
             mNumberChannels: 1,
@@ -74,7 +75,8 @@ public final class AppleSpatialMixerRenderer {
         let inputFrames = StereoFloatBufferBridge.frameCount(
             in: UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         )
-        let outputFrames = StereoFloatBufferBridge.frameCount(in: UnsafeMutableAudioBufferListPointer(output))
+        let outputs = UnsafeMutableAudioBufferListPointer(output)
+        let outputFrames = StereoFloatBufferBridge.frameCount(in: outputs)
         let frames = min(inputFrames, outputFrames, maximumFrames)
 
         guard frames > 0, let audioUnit else {
@@ -82,9 +84,26 @@ public final class AppleSpatialMixerRenderer {
             return
         }
 
+        // When the device buffers already use the mixer's planar stereo float
+        // layout, let the mixer render straight into them; otherwise render
+        // into scratch and bridge the layout afterwards.
+        let renderDirectlyIntoOutput = outputs.count == 2
+            && outputs[0].mNumberChannels == 1
+            && outputs[1].mNumberChannels == 1
+            && outputs[0].mData != nil
+            && outputs[1].mData != nil
+
         let byteSize = UInt32(frames * MemoryLayout<Float>.size)
-        scratchOutput[0].mDataByteSize = byteSize
-        scratchOutput[1].mDataByteSize = byteSize
+        scratchOutput[0] = AudioBuffer(
+            mNumberChannels: 1,
+            mDataByteSize: byteSize,
+            mData: renderDirectlyIntoOutput ? outputs[0].mData : UnsafeMutableRawPointer(scratchLeft)
+        )
+        scratchOutput[1] = AudioBuffer(
+            mNumberChannels: 1,
+            mDataByteSize: byteSize,
+            mData: renderDirectlyIntoOutput ? outputs[1].mData : UnsafeMutableRawPointer(scratchRight)
+        )
 
         currentInput = input
         defer { currentInput = nil }
@@ -104,27 +123,17 @@ public final class AppleSpatialMixerRenderer {
             return
         }
 
-        StereoFloatBufferBridge.copy(
-            input: UnsafePointer(scratchOutput.unsafeMutablePointer),
-            output: output,
-            frames: frames
-        )
-        postProcessor.process(output: output, frames: frames)
-    }
-
-    public func setHeadYawRadians(_ yawRadians: Float) {
-        setHeadOrientation(HeadOrientation(yawRadians: yawRadians))
-    }
-
-    public func setHeadOrientation(_ orientation: HeadOrientation) {
-        guard let audioUnit else {
-            return
+        if renderDirectlyIntoOutput {
+            StereoFloatBufferBridge.clear(output: outputs, fromFrame: frames, toFrame: outputFrames)
+        } else {
+            StereoFloatBufferBridge.copy(
+                input: UnsafePointer(scratchOutput.unsafeMutablePointer),
+                output: output,
+                frames: frames
+            )
         }
-
-        setHeadParameter(kSpatialMixerParam_HeadYaw, degrees: orientation.yawDegrees, audioUnit: audioUnit)
-        setHeadParameter(kSpatialMixerParam_HeadPitch, degrees: orientation.pitchDegrees, audioUnit: audioUnit)
-        setHeadParameter(kSpatialMixerParam_HeadRoll, degrees: orientation.rollDegrees, audioUnit: audioUnit)
     }
+
 }
 
 private extension AppleSpatialMixerRenderer {
@@ -224,7 +233,11 @@ private extension AppleSpatialMixerRenderer {
             operation: "AudioUnitSetProperty(spatial output type)"
         )
 
-        var algorithm = AUSpatializationAlgorithm.spatializationAlgorithm_UseOutputType.rawValue
+        try configureNativeHeadTracking(configuration.headTrackingEnabled)
+
+        let profile = FixedSpatialAudioProfile.music
+
+        var algorithm = profile.spatializationAlgorithm
         try setProperty(
             kAudioUnitProperty_SpatializationAlgorithm,
             scope: kAudioUnitScope_Input,
@@ -233,7 +246,7 @@ private extension AppleSpatialMixerRenderer {
             operation: "AudioUnitSetProperty(spatialization algorithm)"
         )
 
-        var sourceMode = AUSpatialMixerSourceMode.spatialMixerSourceMode_AmbienceBed.rawValue
+        var sourceMode = profile.sourceMode
         try setProperty(
             kAudioUnitProperty_SpatialMixerSourceMode,
             scope: kAudioUnitScope_Input,
@@ -243,7 +256,7 @@ private extension AppleSpatialMixerRenderer {
         )
 
         if #available(macOS 13.0, *) {
-            var hrtfMode = AUSpatialMixerPersonalizedHRTFMode.auto.rawValue
+            var hrtfMode = profile.personalizedHRTFMode
             try setProperty(
                 kAudioUnitProperty_SpatialMixerPersonalizedHRTFMode,
                 scope: kAudioUnitScope_Global,
@@ -254,90 +267,29 @@ private extension AppleSpatialMixerRenderer {
         }
 
         try checkAudioUnitStatus(AudioUnitInitialize(createdUnit), "AudioUnitInitialize(AUSpatialMixer)")
-        try configureFixedSpatialProfile()
+        try configureFixedSpatialProfile(profile)
     }
 
-    func configureFixedSpatialProfile() throws {
-        try setParameter(
-            kSpatialMixerParam_Azimuth,
-            scope: kAudioUnitScope_Input,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(fixed azimuth)"
-        )
-        try setParameter(
-            kSpatialMixerParam_Elevation,
-            scope: kAudioUnitScope_Input,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(fixed elevation)"
-        )
-        try setParameter(
-            kSpatialMixerParam_PlaybackRate,
-            scope: kAudioUnitScope_Input,
-            element: 0,
-            value: 1,
-            operation: "AudioUnitSetParameter(playback rate)"
-        )
-        try setParameter(
-            kSpatialMixerParam_ReverbBlend,
-            scope: kAudioUnitScope_Input,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(reverb blend)"
-        )
-        try setParameter(
-            kSpatialMixerParam_GlobalReverbGain,
-            scope: kAudioUnitScope_Global,
-            element: 0,
-            value: -40,
-            operation: "AudioUnitSetParameter(global reverb gain)"
-        )
-        try setParameter(
-            kSpatialMixerParam_OcclusionAttenuation,
-            scope: kAudioUnitScope_Input,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(occlusion attenuation)"
-        )
-        try setParameter(
-            kSpatialMixerParam_ObstructionAttenuation,
-            scope: kAudioUnitScope_Input,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(obstruction attenuation)"
-        )
-        try setParameter(
-            kSpatialMixerParam_HeadYaw,
-            scope: kAudioUnitScope_Global,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(head yaw)"
-        )
-        try setParameter(
-            kSpatialMixerParam_HeadPitch,
-            scope: kAudioUnitScope_Global,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(head pitch)"
-        )
-        try setParameter(
-            kSpatialMixerParam_HeadRoll,
-            scope: kAudioUnitScope_Global,
-            element: 0,
-            value: 0,
-            operation: "AudioUnitSetParameter(head roll)"
-        )
+    func configureFixedSpatialProfile(_ profile: FixedSpatialAudioProfile) throws {
+        for setting in profile.parameterSettings {
+            try setParameter(
+                setting.parameterID,
+                scope: setting.scope,
+                element: setting.element,
+                value: setting.value,
+                operation: "AudioUnitSetParameter(fixed spatial profile)"
+            )
+        }
     }
 
-    func setHeadParameter(_ parameterID: AudioUnitParameterID, degrees: Float, audioUnit: AudioUnit) {
-        _ = AudioUnitSetParameter(
-            audioUnit,
-            parameterID,
-            kAudioUnitScope_Global,
-            0,
-            degrees,
-            0
+    func configureNativeHeadTracking(_ enabled: Bool) throws {
+        var value: UInt32 = enabled ? 1 : 0
+        try setProperty(
+            kAudioUnitProperty_SpatialMixerEnableHeadTracking,
+            scope: kAudioUnitScope_Global,
+            element: 0,
+            value: &value,
+            operation: "AudioUnitSetProperty(native head tracking)"
         )
     }
 
@@ -375,6 +327,26 @@ private extension AppleSpatialMixerRenderer {
 
         guard let currentInput else {
             StereoFloatBufferBridge.zero(output: ioData)
+            return noErr
+        }
+
+        // Zero-copy: when the tap already delivers planar stereo float, hand
+        // the tap buffers to the mixer instead of copying them.
+        let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: currentInput))
+        let pulls = UnsafeMutableAudioBufferListPointer(ioData)
+        let byteSize = UInt32(Int(frames) * MemoryLayout<Float>.size)
+        if inputs.count == 2,
+           pulls.count == 2,
+           inputs[0].mNumberChannels == 1,
+           inputs[1].mNumberChannels == 1,
+           inputs[0].mDataByteSize >= byteSize,
+           inputs[1].mDataByteSize >= byteSize,
+           let left = inputs[0].mData,
+           let right = inputs[1].mData {
+            pulls[0].mData = left
+            pulls[1].mData = right
+            pulls[0].mDataByteSize = byteSize
+            pulls[1].mDataByteSize = byteSize
             return noErr
         }
 
