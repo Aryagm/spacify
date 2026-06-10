@@ -1,4 +1,5 @@
 import AppKit
+import AudioToolbox
 import Combine
 import Foundation
 
@@ -20,6 +21,7 @@ final class SpatialAudioMenuBarController: ObservableObject {
 
     private var renderer: ProcessTapSpatialRenderer?
     private var restartWorkItem: DispatchWorkItem?
+    private var routedOutputDeviceID: AudioObjectID?
     private let outputDeviceObserver = DefaultOutputDeviceObserver()
 
     private enum PreferenceKey {
@@ -128,6 +130,14 @@ private extension SpatialAudioMenuBarController {
             return
         }
 
+        // CoreAudio re-announces the default device without changing it (for
+        // example when AirPods reconfigure for head tracking); only rebuild
+        // when the device actually changed.
+        let currentDevice = try? AudioObjectID.readDefaultSystemOutputDevice()
+        guard currentDevice != routedOutputDeviceID else {
+            return
+        }
+
         // The route is bound to the device captured at start; rebuild it so
         // audio follows the new default output. Refreshing also re-resolves
         // process objects, and the rebuild itself is debounced.
@@ -146,10 +156,17 @@ private extension SpatialAudioMenuBarController {
         guard !processes.isEmpty else {
             previousRenderer?.stop()
             renderer = nil
+            routedOutputDeviceID = nil
             activeHeadTrackingEnabled = headTrackingEnabled
             statusMessage = "Idle"
             return
         }
+
+        // Stop the old route before starting the next one: a second process
+        // tap created while the same processes are already tapped (and muted)
+        // captures only silence, so an overlapping replacement comes up dead.
+        previousRenderer?.stop()
+        renderer = nil
 
         do {
             let nextRenderer = ProcessTapSpatialRenderer(
@@ -158,8 +175,8 @@ private extension SpatialAudioMenuBarController {
             )
             try nextRenderer.start()
             renderer = nextRenderer
+            routedOutputDeviceID = try? AudioObjectID.readDefaultSystemOutputDevice()
             activeHeadTrackingEnabled = nextHeadTrackingEnabled
-            previousRenderer?.stop()
 
             if selectedApps.count == 1, let app = selectedApps.first {
                 statusMessage = "Spatializing \(app.displayName)"
@@ -167,9 +184,11 @@ private extension SpatialAudioMenuBarController {
                 statusMessage = "Spatializing \(selectedApps.count) apps"
             }
         } catch {
+            routedOutputDeviceID = nil
             statusMessage = previousRenderer == nil ? "Start failed" : "Restart failed"
             if previousRenderer == nil {
                 selectedAppKeys.removeAll()
+                persistSelection()
                 activeHeadTrackingEnabled = headTrackingEnabled
             }
         }

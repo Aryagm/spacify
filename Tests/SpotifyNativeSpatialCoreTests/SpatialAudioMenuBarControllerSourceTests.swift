@@ -52,8 +52,8 @@ struct SpatialAudioMenuBarControllerSourceTests {
         #expect(source.contains("Restart Routing"))
     }
 
-    @Test("route replacement starts before stopping the previous renderer")
-    func routeReplacementStartsBeforeStoppingPreviousRenderer() throws {
+    @Test("route replacement stops the previous renderer before starting")
+    func routeReplacementStopsPreviousRendererBeforeStarting() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appending(path: "Sources/SpotifyNativeSpatial/SpatialAudioMenuBarController.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
@@ -61,9 +61,11 @@ struct SpatialAudioMenuBarControllerSourceTests {
         #expect(source.contains("let previousRenderer = renderer"))
         #expect(source.contains("previousRenderer?.stop()"))
 
+        // A second tap on already-tapped processes captures silence, so the
+        // old route must be torn down before the replacement starts.
         let startIndex = try #require(source.range(of: "try nextRenderer.start()")?.lowerBound)
         let stopIndex = try #require(source.range(of: "previousRenderer?.stop()", options: .backwards)?.lowerBound)
-        #expect(startIndex < stopIndex)
+        #expect(stopIndex < startIndex)
     }
 
     @Test("failed route replacement keeps the current selection")
