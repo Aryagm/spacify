@@ -1,5 +1,6 @@
 #!/bin/sh
-# Renders Resources/AppIcon.icns: a macOS rounded-rect tile with a waveform glyph.
+# Renders Resources/AppIcon.icns: a macOS rounded-rect tile with a waveform
+# inside a tilted orbit ring (sound placed in 3D space).
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,13 +10,13 @@ trap 'rm -rf "$WORK"' EXIT
 cat > "$WORK/render_icon.swift" <<'SWIFT'
 import AppKit
 
-let canvas = 1024
+let canvas: CGFloat = 1024
 let outputPath = CommandLine.arguments[1]
 
 let rep = NSBitmapImageRep(
     bitmapDataPlanes: nil,
-    pixelsWide: canvas,
-    pixelsHigh: canvas,
+    pixelsWide: Int(canvas),
+    pixelsHigh: Int(canvas),
     bitsPerSample: 8,
     samplesPerPixel: 4,
     hasAlpha: true,
@@ -32,29 +33,56 @@ NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 let tile = NSRect(x: 96, y: 96, width: 832, height: 832)
 let tilePath = NSBezierPath(roundedRect: tile, xRadius: 186, yRadius: 186)
 NSGradient(
-    starting: NSColor(calibratedRed: 0.42, green: 0.26, blue: 0.98, alpha: 1),
-    ending: NSColor(calibratedRed: 0.08, green: 0.05, blue: 0.30, alpha: 1)
-)!.draw(in: tilePath, angle: -75)
+    starting: NSColor(calibratedRed: 0.45, green: 0.27, blue: 1.00, alpha: 1),
+    ending: NSColor(calibratedRed: 0.07, green: 0.04, blue: 0.28, alpha: 1)
+)!.draw(in: tilePath, angle: -70)
 
-let configuration = NSImage.SymbolConfiguration(pointSize: 400, weight: .medium)
-if let symbol = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)?
-    .withSymbolConfiguration(configuration) {
-    let white = NSImage(size: symbol.size, flipped: false) { rect in
-        symbol.draw(in: rect)
-        NSColor.white.set()
-        rect.fill(using: .sourceAtop)
-        return true
-    }
+// Soft glow behind the mark, clipped to the tile.
+tilePath.setClip()
+NSGradient(
+    starting: NSColor(calibratedWhite: 1, alpha: 0.18),
+    ending: NSColor(calibratedWhite: 1, alpha: 0)
+)!.draw(
+    fromCenter: NSPoint(x: canvas / 2, y: canvas / 2 + 40), radius: 0,
+    toCenter: NSPoint(x: canvas / 2, y: canvas / 2 + 40), radius: 380,
+    options: []
+)
 
-    let glyphWidth: CGFloat = 480
-    let glyphHeight = glyphWidth * symbol.size.height / symbol.size.width
-    white.draw(in: NSRect(
-        x: (CGFloat(canvas) - glyphWidth) / 2,
-        y: (CGFloat(canvas) - glyphHeight) / 2,
-        width: glyphWidth,
-        height: glyphHeight
-    ))
+let center = NSPoint(x: canvas / 2, y: canvas / 2)
+
+// Orbit ring: a unit-circle arc scaled to an ellipse, tilted. The upper half
+// passes behind the waveform, the lower half in front of it.
+func orbitArc(from startAngle: CGFloat, to endAngle: CGFloat) -> NSBezierPath {
+    let path = NSBezierPath()
+    path.appendArc(withCenter: .zero, radius: 1, startAngle: startAngle, endAngle: endAngle)
+    let transform = NSAffineTransform()
+    transform.translateX(by: center.x, yBy: center.y)
+    transform.rotate(byDegrees: -16)
+    transform.scaleX(by: 286, yBy: 112)
+    path.transform(using: transform as AffineTransform)
+    path.lineWidth = 30
+    path.lineCapStyle = .round
+    return path
 }
+
+NSColor(calibratedWhite: 1, alpha: 0.38).set()
+orbitArc(from: 8, to: 172).stroke()
+
+// Waveform bars.
+let barWidth: CGFloat = 56
+let barHeights: [CGFloat] = [164, 276, 392, 276, 164]
+NSColor.white.set()
+for (index, height) in barHeights.enumerated() {
+    let x = center.x + CGFloat(index - 2) * 96 - barWidth / 2
+    NSBezierPath(
+        roundedRect: NSRect(x: x, y: center.y - height / 2, width: barWidth, height: height),
+        xRadius: barWidth / 2,
+        yRadius: barWidth / 2
+    ).fill()
+}
+
+NSColor(calibratedWhite: 1, alpha: 0.96).set()
+orbitArc(from: 188, to: 352).stroke()
 
 NSGraphicsContext.restoreGraphicsState()
 
@@ -74,4 +102,5 @@ done
 
 mkdir -p "$ROOT/Resources"
 iconutil -c icns "$ICONSET" -o "$ROOT/Resources/AppIcon.icns"
-echo "Wrote $ROOT/Resources/AppIcon.icns"
+sips -s format png --resampleWidth 512 "$ROOT/Resources/AppIcon.icns" --out "$ROOT/Resources/AppIcon.png" > /dev/null
+echo "Wrote $ROOT/Resources/AppIcon.icns and AppIcon.png"
