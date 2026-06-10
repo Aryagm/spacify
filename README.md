@@ -18,7 +18,7 @@ Then: click the earbuds icon in the menu bar → toggle an app → listen. macOS
 
 ## What it does
 
-Click the waveform icon in the menu bar, flip the switch next to an app, and that app's stereo audio is lifted out of its normal playback path and re-rendered by `AUSpatialMixer` — the same spatializer Apple uses for its own Spatial Audio features:
+Click the earbuds icon in the menu bar, flip the switch next to an app, and that app's stereo audio is lifted out of its normal playback path and re-rendered by `AUSpatialMixer` — the same spatializer Apple uses for its own Spatial Audio features:
 
 - **Works with any audio app.** If it shows up in CoreAudio, it can be spatialized: streaming clients, browsers, games, video calls. Select several apps at once and they share one tap.
 - **Native AirPods head tracking.** One switch asks Apple's mixer to anchor the sound stage in front of you using the AirPods' own motion engine. Spacify never touches the motion data itself.
