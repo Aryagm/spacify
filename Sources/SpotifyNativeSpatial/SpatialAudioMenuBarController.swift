@@ -39,8 +39,8 @@ final class SpatialAudioMenuBarController: ObservableObject {
         }
     }
 
-    var statusSymbolName: String {
-        selectedAppKeys.isEmpty ? "waveform.circle" : "waveform.circle.fill"
+    var menuBarIcon: NSImage {
+        selectedAppKeys.isEmpty ? MenuBarIconRenderer.idle : MenuBarIconRenderer.active
     }
 
     var headTrackingChangePending: Bool {

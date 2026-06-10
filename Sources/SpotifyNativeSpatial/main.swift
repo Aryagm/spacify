@@ -59,11 +59,14 @@ private struct SpacifyMenuBarApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Spacify", systemImage: controller.statusSymbolName) {
+        MenuBarExtra {
             SpatialAudioMenuContent(controller: controller, isMenuPresented: $isMenuPresented)
                 .onAppear {
                     controller.refreshApps(restartSelected: false)
                 }
+        } label: {
+            Image(nsImage: controller.menuBarIcon)
+                .accessibilityLabel("Spacify")
         }
         .menuBarExtraAccess(isPresented: $isMenuPresented)
         .menuBarExtraStyle(.window)
