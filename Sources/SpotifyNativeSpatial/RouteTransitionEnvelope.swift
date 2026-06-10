@@ -18,9 +18,9 @@ final class RouteTransitionEnvelope: @unchecked Sendable {
 
     let fadeOutDuration: TimeInterval = 0.1
 
-    init(sampleRate: Double) {
-        silenceFrames = Int(sampleRate * 0.15)
-        fadeInFrames = Int(sampleRate * 0.25)
+    init(sampleRate: Double, settleDuration: TimeInterval = 0.15, fadeInDuration: TimeInterval = 0.25) {
+        silenceFrames = Int(sampleRate * settleDuration)
+        fadeInFrames = Int(sampleRate * fadeInDuration)
         fadeOutFrames = Int(sampleRate * fadeOutDuration)
     }
 

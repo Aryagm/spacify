@@ -14,6 +14,15 @@ final class ProcessTapSpatialRenderer {
     private var spatialMixer: AppleSpatialMixerRenderer?
     private var transitionEnvelope: RouteTransitionEnvelope?
     private var isRunning = false
+    private var configuredSampleRate: Float64 = 0
+    private var rateListenerDeviceID = AudioObjectID.unknown
+    private var rateListenerBlock: AudioObjectPropertyListenerBlock?
+
+    /// Fired on the main actor when the output device's nominal sample rate
+    /// no longer matches the rate this route was configured for (AirPods do
+    /// this when reconfiguring, e.g. for head tracking). The owner should
+    /// rebuild the route.
+    var onOutputSampleRateChanged: (@MainActor () -> Void)?
 
     init(processes: [AppAudioProcess], headTrackingEnabled: Bool = false) {
         self.processes = processes
@@ -113,7 +122,14 @@ final class ProcessTapSpatialRenderer {
         )
         spatialMixer = mixer
 
-        let envelope = RouteTransitionEnvelope(sampleRate: sampleRate)
+        // Enabling head tracking makes AirPods renegotiate their link to
+        // start the motion channel shortly after the route starts; hold the
+        // settle window longer so the renegotiation lands under silence.
+        let envelope = RouteTransitionEnvelope(
+            sampleRate: sampleRate,
+            settleDuration: headTrackingEnabled ? 0.75 : 0.15,
+            fadeInDuration: headTrackingEnabled ? 0.35 : 0.25
+        )
         transitionEnvelope = envelope
 
         try checkOSStatus(
@@ -132,6 +148,9 @@ final class ProcessTapSpatialRenderer {
             "AudioDeviceStart"
         )
 
+        configuredSampleRate = sampleRate
+        registerSampleRateListener(deviceID: outputDeviceID)
+
         print("Rendering selected audio through Apple Spatial Mixer (\(outputKind.description)) to \(outputName).")
     }
 
@@ -139,6 +158,8 @@ final class ProcessTapSpatialRenderer {
         guard isRunning || tapID.isValid || aggregateDeviceID.isValid else {
             return
         }
+
+        unregisterSampleRateListener()
 
         // Let the route fade to silence before tearing it down, so stopping
         // doesn't cut audio mid-waveform.
@@ -176,6 +197,50 @@ final class ProcessTapSpatialRenderer {
 
 @available(macOS 14.2, *)
 private extension ProcessTapSpatialRenderer {
+    func registerSampleRateListener(deviceID: AudioObjectID) {
+        guard let onChange = onOutputSampleRateChanged else {
+            return
+        }
+
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let expectedRate = configuredSampleRate
+        let block: AudioObjectPropertyListenerBlock = { _, _ in
+            MainActor.assumeIsolated {
+                let currentRate = (try? deviceID.readNominalSampleRate()) ?? 0
+                guard currentRate > 0, abs(currentRate - expectedRate) > 0.5 else {
+                    return
+                }
+
+                onChange()
+            }
+        }
+
+        if AudioObjectAddPropertyListenerBlock(deviceID, &address, .main, block) == noErr {
+            rateListenerDeviceID = deviceID
+            rateListenerBlock = block
+        }
+    }
+
+    func unregisterSampleRateListener() {
+        guard let block = rateListenerBlock, rateListenerDeviceID.isValid else {
+            return
+        }
+
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyNominalSampleRate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        _ = AudioObjectRemovePropertyListenerBlock(rateListenerDeviceID, &address, .main, block)
+        rateListenerDeviceID = .unknown
+        rateListenerBlock = nil
+    }
+
     func waitUntilAggregateDeviceIsReady(_ deviceID: AudioObjectID) throws {
         let deadline = Date().addingTimeInterval(2)
         while Date() < deadline {

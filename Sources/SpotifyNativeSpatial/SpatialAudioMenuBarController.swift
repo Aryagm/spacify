@@ -173,6 +173,9 @@ private extension SpatialAudioMenuBarController {
                 processes: processes,
                 headTrackingEnabled: nextHeadTrackingEnabled
             )
+            nextRenderer.onOutputSampleRateChanged = { [weak self] in
+                self?.scheduleRendererRestart()
+            }
             try nextRenderer.start()
             renderer = nextRenderer
             routedOutputDeviceID = try? AudioObjectID.readDefaultSystemOutputDevice()
