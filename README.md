@@ -70,7 +70,7 @@ make test               # run the test suite
 
 1. **Discovery.** `AudioProcessResolver` enumerates CoreAudio process objects, maps them back to their owning `.app` bundles (with cached bundle metadata), and groups multi-process apps — a Chromium browser's many helper processes appear as one menu entry.
 2. **Capture.** Toggling apps creates one shared `CATapDescription(stereoMixdownOfProcesses:)` process tap with `muteBehavior = .mutedWhenTapped`, so the originals go silent while tapped.
-3. **Routing.** A private aggregate device wraps the current default output and the tap (`kAudioAggregateDeviceTapAutoStartKey`), clocked by the output device with tap drift compensation off. An IO proc on a `userInteractive` dispatch queue drives the render.
+3. **Routing.** A private aggregate device wraps the current default output and the tap (`kAudioAggregateDeviceTapAutoStartKey`), clocked by the output device, with the tap drift-compensated to that clock so apps producing at a different sample rate stay pitch-correct. An IO proc on a `userInteractive` dispatch queue drives the render at the aggregate's rate.
 4. **Spatialization.** `AUSpatialMixer` is configured once at route start: `UseOutputType` spatialization, ambience-bed source mode, the output type inferred from the device (headphones / built-in / external speakers), personalized HRTF in auto mode (macOS 13+), and native head tracking via `kAudioUnitProperty_SpatialMixerEnableHeadTracking` when enabled.
 5. **Delivery.** The mixer's planar float output is bridged to whatever buffer layout the device expects and written straight into the IO proc's output buffers.
 

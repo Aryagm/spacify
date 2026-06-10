@@ -61,18 +61,6 @@ final class ProcessTapSpatialRenderer {
         let outputUID = try outputDeviceID.readDeviceUID()
         let outputName = (try? outputDeviceID.readDeviceName()) ?? outputUID
         let outputKind = SpatialOutputDeviceKind.infer(deviceName: outputName, deviceUID: outputUID)
-        let sampleRate = streamDescription.mSampleRate > 0
-            ? streamDescription.mSampleRate
-            : ((try? outputDeviceID.readNominalSampleRate()) ?? 48_000)
-
-        let mixer = try AppleSpatialMixerRenderer(
-            configuration: AppleSpatialMixerConfiguration(
-                sampleRate: sampleRate,
-                outputDeviceKind: outputKind,
-                headTrackingEnabled: headTrackingEnabled
-            )
-        )
-        spatialMixer = mixer
 
         let aggregateDescription: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Spacify",
@@ -89,7 +77,11 @@ final class ProcessTapSpatialRenderer {
             ],
             kAudioAggregateDeviceTapListKey: [
                 [
-                    kAudioSubTapDriftCompensationKey: false,
+                    // The aggregate is clocked by the output device, not the
+                    // tap. Drift compensation rate-matches the tap stream to
+                    // that clock; without it a tap producing at a different
+                    // rate (44.1kHz app on a 48kHz device) plays pitch-shifted.
+                    kAudioSubTapDriftCompensationKey: true,
                     kAudioSubTapUIDKey: tapDescription.uuid.uuidString
                 ]
             ]
@@ -103,6 +95,22 @@ final class ProcessTapSpatialRenderer {
         aggregateDeviceID = createdAggregateID
 
         try waitUntilAggregateDeviceIsReady(aggregateDeviceID)
+
+        // The IO proc runs on the aggregate's clock, so the mixer must run at
+        // the aggregate's rate -- not the tap's.
+        let aggregateRate = (try? aggregateDeviceID.readNominalSampleRate()) ?? 0
+        let sampleRate = aggregateRate > 0
+            ? aggregateRate
+            : ((try? outputDeviceID.readNominalSampleRate()) ?? streamDescription.mSampleRate)
+
+        let mixer = try AppleSpatialMixerRenderer(
+            configuration: AppleSpatialMixerConfiguration(
+                sampleRate: sampleRate,
+                outputDeviceKind: outputKind,
+                headTrackingEnabled: headTrackingEnabled
+            )
+        )
+        spatialMixer = mixer
 
         try checkOSStatus(
             // Capture the mixer strongly: weak loads take a runtime lock and

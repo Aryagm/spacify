@@ -13,13 +13,16 @@ struct ProcessTapSpatialRendererSourceTests {
         #expect(!source.contains("spatialMixer?.setNativeHeadTrackingEnabled"))
     }
 
-    @Test("does not enable aggregate drift compensation for process taps")
-    func doesNotEnableAggregateDriftCompensationForProcessTaps() throws {
+    @Test("rate-matches the tap to the aggregate clock")
+    func rateMatchesTheTapToTheAggregateClock() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appending(path: "Sources/SpotifyNativeSpatial/ProcessTapSpatialRenderer.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
-        #expect(source.contains("kAudioSubTapDriftCompensationKey: false"))
-        #expect(!source.contains("kAudioSubTapDriftCompensationKey: true"))
+        // The aggregate is clocked by the output device; the tap stream must
+        // be drift-compensated to that clock or apps producing at a different
+        // sample rate play pitch-shifted.
+        #expect(source.contains("kAudioSubTapDriftCompensationKey: true"))
+        #expect(!source.contains("kAudioSubTapDriftCompensationKey: false"))
     }
 }
