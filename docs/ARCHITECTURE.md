@@ -42,7 +42,7 @@ The render callback runs about 100 times per second on an audio thread. The hot 
 
 ## No custom DSP
 
-Spacify adds no processing of its own. No EQ, no compression, no widening, no crossfeed. A fixed music profile keeps the mixer clean: stereo stays an ambience bed, reverb is zeroed, playback rate is locked at 1.0. The one exception is a sub-second fade when a route starts or stops, so toggling doesn't click.
+Spacify adds no processing of its own. No EQ, no compression, no widening, no crossfeed. The default profile keeps the mixer dry: stereo stays an ambience bed, reverb is zeroed, playback rate is locked at 1.0. The Room Ambience toggle switches to a second profile that engages the mixer's built-in room reverb, which is closer to Apple's native Spatialize Stereo character. Both profiles are Apple's engine end to end. The one exception is a sub-second fade when a route starts or stops, so toggling doesn't click.
 
 The tests enforce this. Purity guards are source-inspection tests that fail if anyone adds post-processing or manual head-pose math. They also pin the routing invariants: drift compensation stays on, routes never overlap.
 

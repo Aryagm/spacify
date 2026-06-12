@@ -31,6 +31,18 @@ struct SpatialAudioMenuContent: View {
                 }
             }
 
+            MenuHeader("Room Ambience") {
+                Toggle("", isOn: $controller.roomAmbienceEnabled.animation(.macControlCenterMenuResize))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+
+            MenuSection(divider: false) {
+                Text("Closer to Apple's native render")
+                    .foregroundStyle(.secondary)
+                    .textScale(.secondary)
+            }
+
             MenuSection("Apps", divider: true) {
                 if controller.availableApps.isEmpty {
                     MenuCommand(height: .auto, activatesApp: false, dismissesMenu: false) {

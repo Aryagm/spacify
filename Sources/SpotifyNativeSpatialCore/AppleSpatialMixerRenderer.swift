@@ -7,17 +7,20 @@ public struct AppleSpatialMixerConfiguration {
     public var outputDeviceKind: SpatialOutputDeviceKind
     public var maximumFrames: Int
     public var headTrackingEnabled: Bool
+    public var roomAmbienceEnabled: Bool
 
     public init(
         sampleRate: Float64,
         outputDeviceKind: SpatialOutputDeviceKind,
         maximumFrames: Int = 16_384,
-        headTrackingEnabled: Bool = false
+        headTrackingEnabled: Bool = false,
+        roomAmbienceEnabled: Bool = false
     ) {
         self.sampleRate = sampleRate
         self.outputDeviceKind = outputDeviceKind
         self.maximumFrames = maximumFrames
         self.headTrackingEnabled = headTrackingEnabled
+        self.roomAmbienceEnabled = roomAmbienceEnabled
     }
 }
 
@@ -72,6 +75,13 @@ public final class AppleSpatialMixerRenderer {
     /// keeps running while AirPods start or stop their motion channel.
     public func setHeadTrackingEnabled(_ enabled: Bool) throws {
         try configureNativeHeadTracking(enabled)
+    }
+
+    /// Switches between the dry music profile and the room-ambience profile
+    /// on the live mixer. Reverb blend and gain are parameters, so they
+    /// apply without reinitializing the unit.
+    public func setRoomAmbienceEnabled(_ enabled: Bool) throws {
+        try configureFixedSpatialProfile(enabled ? .roomAmbience : .music)
     }
 
     public func render(
@@ -242,7 +252,9 @@ private extension AppleSpatialMixerRenderer {
 
         try configureNativeHeadTracking(configuration.headTrackingEnabled)
 
-        let profile = FixedSpatialAudioProfile.music
+        let profile = configuration.roomAmbienceEnabled
+            ? FixedSpatialAudioProfile.roomAmbience
+            : FixedSpatialAudioProfile.music
 
         var algorithm = profile.spatializationAlgorithm
         try setProperty(

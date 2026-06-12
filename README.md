@@ -27,6 +27,7 @@ Then click the earbuds icon in the menu bar, toggle an app, and listen. macOS wi
 - **Any audio app.** Streaming clients, browsers, games, video calls. Several at once.
 - **AirPods head tracking.** Toggles live, without stopping the music.
 - **Tuned to your output.** Binaural HRTF on headphones, speaker profiles elsewhere.
+- **Two renders.** Dry by default. Flip on Room Ambience for Apple's room modeling, closer to native Spatialize Stereo.
 - **Follows your devices.** Routing rebuilds itself when AirPods connect or disconnect.
 - **No double audio.** Originals are muted at the system level while routed.
 - **Remembers your setup.** Selections and preferences survive restarts.

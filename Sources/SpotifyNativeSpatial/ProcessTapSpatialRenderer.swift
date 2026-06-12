@@ -8,6 +8,7 @@ final class ProcessTapSpatialRenderer {
     private let queue: DispatchQueue
 
     private var headTrackingEnabled: Bool
+    private var roomAmbienceEnabled: Bool
     private var tapID = AudioObjectID.unknown
     private var aggregateDeviceID = AudioObjectID.unknown
     private var deviceProcID: AudioDeviceIOProcID?
@@ -24,9 +25,10 @@ final class ProcessTapSpatialRenderer {
     /// rebuild the route.
     var onOutputSampleRateChanged: (@MainActor () -> Void)?
 
-    init(processes: [AppAudioProcess], headTrackingEnabled: Bool = false) {
+    init(processes: [AppAudioProcess], headTrackingEnabled: Bool = false, roomAmbienceEnabled: Bool = false) {
         self.processes = processes
         self.headTrackingEnabled = headTrackingEnabled
+        self.roomAmbienceEnabled = roomAmbienceEnabled
         self.queue = DispatchQueue(label: "Spacify.ProcessTap", qos: .userInteractive)
     }
 
@@ -40,6 +42,18 @@ final class ProcessTapSpatialRenderer {
 
         try spatialMixer.setHeadTrackingEnabled(enabled)
         headTrackingEnabled = enabled
+    }
+
+    /// Switches the render profile on the live mixer without rebuilding the
+    /// route. Throws if there is no live mixer; the caller falls back to a
+    /// route restart.
+    func setRoomAmbienceEnabled(_ enabled: Bool) throws {
+        guard isRunning, let spatialMixer else {
+            throw "No running spatial route to apply the render profile to."
+        }
+
+        try spatialMixer.setRoomAmbienceEnabled(enabled)
+        roomAmbienceEnabled = enabled
     }
 
     func start() throws {
@@ -129,7 +143,8 @@ final class ProcessTapSpatialRenderer {
             configuration: AppleSpatialMixerConfiguration(
                 sampleRate: sampleRate,
                 outputDeviceKind: outputKind,
-                headTrackingEnabled: headTrackingEnabled
+                headTrackingEnabled: headTrackingEnabled,
+                roomAmbienceEnabled: roomAmbienceEnabled
             )
         )
         spatialMixer = mixer

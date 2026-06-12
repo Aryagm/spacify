@@ -18,6 +18,14 @@ final class SpatialAudioMenuBarController: ObservableObject {
             applyHeadTrackingPreferenceChange()
         }
     }
+    @Published var roomAmbienceEnabled = false {
+        didSet {
+            guard oldValue != roomAmbienceEnabled else {
+                return
+            }
+            applyRoomAmbiencePreferenceChange()
+        }
+    }
 
     private var renderer: ProcessTapSpatialRenderer?
     private var restartWorkItem: DispatchWorkItem?
@@ -26,6 +34,7 @@ final class SpatialAudioMenuBarController: ObservableObject {
 
     private enum PreferenceKey {
         static let headTracking = "headTrackingEnabled"
+        static let roomAmbience = "roomAmbienceEnabled"
         static let selectedApps = "selectedAppKeys"
     }
 
@@ -34,6 +43,7 @@ final class SpatialAudioMenuBarController: ObservableObject {
         let resolvedHeadTracking = headTrackingEnabled ?? defaults.bool(forKey: PreferenceKey.headTracking)
         self.headTrackingEnabled = resolvedHeadTracking
         self.activeHeadTrackingEnabled = resolvedHeadTracking
+        self.roomAmbienceEnabled = defaults.bool(forKey: PreferenceKey.roomAmbience)
         self.selectedAppKeys = Set(defaults.stringArray(forKey: PreferenceKey.selectedApps) ?? [])
 
         outputDeviceObserver.start { [weak self] in
@@ -130,6 +140,20 @@ private extension SpatialAudioMenuBarController {
         }
     }
 
+    func applyRoomAmbiencePreferenceChange() {
+        UserDefaults.standard.set(roomAmbienceEnabled, forKey: PreferenceKey.roomAmbience)
+
+        guard let renderer else {
+            return
+        }
+
+        do {
+            try renderer.setRoomAmbienceEnabled(roomAmbienceEnabled)
+        } catch {
+            scheduleRendererRestart()
+        }
+    }
+
     func persistSelection() {
         UserDefaults.standard.set(selectedAppKeys.sorted(), forKey: PreferenceKey.selectedApps)
     }
@@ -180,7 +204,8 @@ private extension SpatialAudioMenuBarController {
         do {
             let nextRenderer = ProcessTapSpatialRenderer(
                 processes: processes,
-                headTrackingEnabled: nextHeadTrackingEnabled
+                headTrackingEnabled: nextHeadTrackingEnabled,
+                roomAmbienceEnabled: roomAmbienceEnabled
             )
             nextRenderer.onOutputSampleRateChanged = { [weak self] in
                 self?.scheduleRendererRestart()
